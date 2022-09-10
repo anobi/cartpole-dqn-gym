@@ -1,0 +1,11 @@
+ipython
+jedi
+matplotlib
+numpy
+Pillow
+scipy
+tqdm
+gym==0.26.0
+torch==1.12.1+cu116
+torchaudio==0.12.1
+torchvision==0.13.1+cu116
