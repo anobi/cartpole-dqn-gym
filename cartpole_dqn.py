@@ -25,13 +25,9 @@ class DQN(nn.Module):
         self.head = nn.Linear(128, outputs)
 
     def forward(self, x):
-        # x = F.relu(self.bn1(self.conv1(x)))
-        # x = F.relu(self.bn2(self.conv2(x)))
-        # x = F.relu(self.bn3(self.conv3(x)))
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        # print(x.size(), x.shape)
         x = F.relu(self.hidden1(x.view(x.size(0), -1)))
         return self.head(x)
 

@@ -3,7 +3,6 @@ import gym
 import math
 import random
 import torch
-import pygame
 
 import torchvision.transforms as T
 from cartpole_dqn import DQN
@@ -24,8 +23,6 @@ cuda_device = torch.device('cuda')
 RNG = torch.Generator(device='cuda')
 RNG.manual_seed(SEED)
 
-pygame.init()
-
 
 class CartPoleV1:
     def __init__(self, device):
@@ -43,7 +40,7 @@ class CartPoleV1:
 
     def init_net(self):
         self.env.reset(seed=SEED)
-        _, self.screen_height, self.screen_width = self.render().shape
+        self.screen_height, self.screen_width, _ = self.render().shape
 
         self.net = DQN(self.image_size, self.image_size, self.action_space).to(self.device)
 

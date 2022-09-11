@@ -3,11 +3,6 @@ import numpy as np
 
 from PIL import Image, ImageOps
 
-def get_cart_location(env, screen_width):
-    world_width = env.x_threshold * 2
-    scale = screen_width / world_width
-    return int(env.state[0] * scale + screen_width / 2.0)
-
 
 def capture_frames(env, device, n_frames, action=0):
     screen_buffer = []
@@ -22,7 +17,7 @@ def get_human_screen(render_frame):
 
 
 def get_torch_screen(render_frame, device, image_size, resize_func):
-    # Grayscale and resize the screen to 84x84
+    # Grayscale and resize
     p_img = Image.fromarray(render_frame)
     p_img = ImageOps.grayscale(p_img)
     p_img = ImageOps.fit(p_img, [image_size, image_size])
