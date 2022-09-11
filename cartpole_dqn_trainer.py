@@ -4,7 +4,7 @@ import torch.optim as optim
 from tqdm import trange
 from itertools import count
 from cartpole_dqn import DQN, optimize_model
-from cartpole_screen import get_screen, capture_frames
+from cartpole_screen import get_torch_screen, capture_frames
 from plotting import Plotter
 from memory import Memory
 
@@ -25,37 +25,33 @@ class CartPoleDQNTrainer:
 
         self.plotter = Plotter("Training", 3)
 
-    def run(self, num_episodes=50, batch_size=128, gamma=0.999, target_update=10, frames_per_state=4):
+    def run(self, num_episodes=50, batch_size=128, gamma=0.999, target_update=10, frames_per_state=4, plot=False):
 
         self.target_net.load_state_dict(self.env.net.state_dict())
         self.target_net.eval()
 
         for ie in (tr := trange(num_episodes)):
+            # Reset the environment and fetch a new initial state screenshot
             self.env.env.reset()
-            last_screen = get_screen(self.env.env, self.env.device, monochrome=True)
-            current_screen = get_screen(self.env.env, self.env.device, monochrome=True)
-            state = current_screen - last_screen
-
             episode_reward = 0
 
+            frame = self.env.render()
+            last_state = None
+            current_state = get_torch_screen(frame, self.env.device, self.env.image_size, self.env.resize)
+
             for t in count():
-                action = self.env.select_action(state, self.steps_done)
+                action = self.env.select_action(current_state, self.steps_done)
                 _, reward, done, _, _ = self.env.env.step(action.item())
                 episode_reward += reward
                 reward = torch.tensor([reward], device=self.env.device)
 
                 # Observe new state
-                last_screen = current_screen
-                current_screen = get_screen(self.env.env, self.env.device, monochrome=True)
-                if done:
-                    next_state = None
-                else:
-                    next_state = current_screen - last_screen
+                last_state = current_state
+                current_frame = self.env.render()
+                current_state = get_torch_screen(current_frame, self.env.device, self.env.image_size, self.env.resize)
 
                 # Store transition and to replay memory and perform gradient descent
-                self.memory.push(state, action, next_state, torch.tensor([episode_reward], device=self.env.device))
-
-                state = next_state
+                self.memory.push(last_state, action, current_state, torch.tensor([episode_reward], device=self.env.device))
 
                 optimize_model(self.memory, batch_size, self.optimizer,
                                self.env.net, self.target_net, gamma,
@@ -66,16 +62,17 @@ class CartPoleDQNTrainer:
                     self.episode_rewards.append(episode_reward)
 
                     durations_t = torch.tensor(self.episode_durations, dtype=torch.float)
-                    #self.plotter.set("durations", self.episode_durations)
-                    #self.plotter.set("rewards", self.episode_rewards)
 
                     if len(durations_t) >= 100:
                         means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
                         means = torch.cat((torch.zeros(99), means))
                         tr.set_description("mean duration %.2f" % torch.mean(means))
-                        #self.plotter.set("means", means)
 
-                    #self.plotter.draw()
+                    if plot:
+                        self.plotter.set("durations", self.episode_durations)
+                        self.plotter.set("rewards", self.episode_rewards)
+                        self.plotter.set("means", means)
+                        self.plotter.draw()
                     break
 
                 if ie % target_update == 0:

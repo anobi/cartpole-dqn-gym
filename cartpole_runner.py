@@ -1,7 +1,7 @@
 import numpy as np
 from tqdm import trange
 from itertools import count
-from cartpole_screen import get_screen
+from cartpole_screen import get_torch_screen, get_human_screen
 from gym.utils.play import display_arr
 
 import pygame
@@ -17,19 +17,20 @@ class CartPoleRunner:
     def run(self, num_episodes=50):
         for _ in (tr := trange(num_episodes)):
             self.env.env.reset()
+            frame = self.env.render()
+            display_arr(self.display, get_human_screen(frame), [self.env.screen_height, self.env.screen_width], True)
 
-            last_screen = get_screen(self.env.env, self.env.device, monochrome=True)
-            current_screen = get_screen(self.env.env, self.env.device, monochrome=True)
-            state = current_screen - last_screen
-
-            display_arr(self.display, self.env.env.render(), [600, 800], True)
+            current_screen = get_torch_screen(frame, self.env.device, self.env.image_size, self.env.resize)
+            last_screen = current_screen
+            state = current_screen
 
             for t in count():
                 action = self.env.select_action(state, self.steps_done)
                 _, reward, done, _, _ = self.env.env.step(action.item())
 
                 last_screen = current_screen
-                current_screen = get_screen(self.env.env, self.env.device, monochrome=True)
+                current_frame = self.env.render()
+                current_screen = get_torch_screen(current_frame, self.env.device, self.env.image_size, self.env.resize)
                 if done:
                     next_state = None
                 else:

@@ -5,10 +5,11 @@ import random
 import torch
 import pygame
 
+import torchvision.transforms as T
 from cartpole_dqn import DQN
 from cartpole_dqn_trainer import CartPoleDQNTrainer
 from cartpole_runner import CartPoleRunner
-from cartpole_screen import get_screen
+from cartpole_screen import get_torch_screen, get_human_screen
 
 SEED = 3907
 BATCH_SIZE = 128
@@ -17,6 +18,7 @@ EPS_START = 0.9
 EPS_END = 0.01
 EPS_DECAY = 200
 TARGET_UPDATE = 10
+IMAGE_SIZE = 84
 
 cuda_device = torch.device('cuda')
 RNG = torch.Generator(device='cuda')
@@ -32,18 +34,20 @@ class CartPoleV1:
         self.action_space = self.env.action_space.n
 
         self.net = None
+        self.image_size = IMAGE_SIZE
         self.screen_width = 0
         self.screen_height = 0
+        self.resize = T.Compose([T.ToPILImage(), T.Resize(IMAGE_SIZE, interpolation=T.InterpolationMode.BICUBIC), T.ToTensor()])
+
+        self.init_net()
 
     def init_net(self):
         self.env.reset(seed=SEED)
-        init_screen = get_screen(self.env, self.device, monochrome=True)
-        _, self.screen_height, self.screen_width = init_screen.shape
+        _, self.screen_height, self.screen_width = self.render().shape
 
-        self.net = DQN(self.screen_height, self.screen_width, self.action_space).to(self.device)
+        self.net = DQN(self.image_size, self.image_size, self.action_space).to(self.device)
 
     def load_net(self, path):
-        self.init_net()
         self.net.load_state_dict(torch.load(path))
         self.net.eval()
 
@@ -59,7 +63,7 @@ class CartPoleV1:
             return torch.tensor([[random.randrange(self.action_space)]], device=self.device, dtype=torch.long)
 
     def render(self):
-        self.env.render()
+        return self.env.render()
 
     def close(self):
         self.env.close()
@@ -83,8 +87,6 @@ def main(argv):
 
     if mode == 'train':
         episodes = int(argv[1])
-        env.init_net()
-
         print(f"Training on {device}")
         trainer = CartPoleDQNTrainer(env, batch_size=BATCH_SIZE, gamma=GAMMA, eps_start=EPS_START,
                                      eps_end=EPS_END, eps_decay=EPS_DECAY, target_update=TARGET_UPDATE)
