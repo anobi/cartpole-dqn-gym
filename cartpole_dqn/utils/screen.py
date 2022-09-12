@@ -1,4 +1,5 @@
 import torch
+import torchvision.transforms as T
 import numpy as np
 
 from PIL import Image, ImageOps
@@ -16,7 +17,7 @@ def get_human_screen(render_frame):
     return Image.fromarray(render_frame)
 
 
-def get_torch_screen(render_frame, device, image_size, resize_func):
+def get_torch_screen(render_frame, device, image_size):
     # Grayscale and resize
     p_img = Image.fromarray(render_frame)
     p_img = ImageOps.grayscale(p_img)
@@ -24,4 +25,9 @@ def get_torch_screen(render_frame, device, image_size, resize_func):
     
     img_array = np.ascontiguousarray(p_img, dtype=np.float32) / 255
     torch_screen = torch.from_numpy(img_array)
+    resize_func = T.Compose([
+        T.ToPILImage(), 
+        T.Resize(image_size, interpolation=T.InterpolationMode.BICUBIC), 
+        T.ToTensor()
+    ])
     return resize_func(torch_screen).unsqueeze(0).to(device)

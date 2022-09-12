@@ -1,10 +1,11 @@
 import pygame
+import torch
 import numpy as np
 from tqdm import trange
 from itertools import count
 from gym.utils.play import display_arr
 
-from cartpole_dqn.utils.screen import get_torch_screen, get_human_screen
+from cartpole_dqn.utils.screen import get_torch_screen
 
 
 class CartPoleRunner:
@@ -21,22 +22,26 @@ class CartPoleRunner:
         display_arr(self.display, frame, [self.env.screen_width, self.env.screen_height], True)
         pygame.display.flip()
 
+    def select_action(self, state):
+        with torch.no_grad():
+            return self.env.net(state.to(self.env.device)).max(1)[1].view(1, 1)
+
     def run(self, num_episodes=50):
         for _ in (tr := trange(num_episodes)):
-            self.env.env.reset()
+            self.env.reset()
             frame = self.env.render()
-            current_screen = get_torch_screen(frame, self.env.device, self.env.image_size, self.env.resize)
+            current_screen = get_torch_screen(frame, self.env.device, self.env.image_size)
             last_screen = current_screen
             state = current_screen
             self.draw(frame)
 
             for t in count():
-                action = self.env.select_action(state, self.steps_done)
-                _, _, done, _, _ = self.env.env.step(action.item())
+                action = self.select_action(state)
+                _, _, done, _, _ = self.env.step(action.item())
 
                 last_screen = current_screen
                 current_frame = self.env.render()
-                current_screen = get_torch_screen(current_frame, self.env.device, self.env.image_size, self.env.resize)
+                current_screen = get_torch_screen(current_frame, self.env.device, self.env.image_size)
                 self.draw(current_frame)
                 
                 if done:

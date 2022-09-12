@@ -1,3 +1,5 @@
+import math
+import random
 import torch
 import torch.optim as optim
 
@@ -20,6 +22,14 @@ class CartPoleDQNTrainer:
         self.optimizer = optim.RMSprop(self.env.net.parameters())
         self.memory = Memory(100000)
 
+        self.action_space=action_space
+        self.batch_size=batch_size
+        self.gamma=gamma
+        self.eps_start=eps_start
+        self.eps_end=eps_end
+        self.eps_decay=eps_decay
+        self.target_update=target_update
+
         self.steps_done = 0
         self.total_reward = 0
         self.episode_durations = []
@@ -27,30 +37,40 @@ class CartPoleDQNTrainer:
 
         self.plotter = Plotter("Training", 3)
 
-    def set_state_file(self, path): 
+    def set_state_file(self, path):
         pass
 
-    def run(self, num_episodes=50, batch_size=128, gamma=0.999, target_update=10, frames_per_state=4, plot=False):
+    def select_action(self, state, steps_done):
+        sample = torch.rand(1, generator=self.env.rng, device=self.device).item()
+        eps_threshold = self.eps_end + (self.eps_start - self.eps_end) * math.exp(-1. * steps_done / self.eps_decay)
+        steps_done += 1
+        if sample > eps_threshold:
+            with torch.no_grad():
+                return self.env.net(state.to(self.device)).max(1)[1].view(1, 1)
+        else:
+            return torch.tensor([[random.randrange(self.action_space)]], device=self.device, dtype=torch.long)
+
+    def run(self, num_episodes=50, plot=False):
         self.target_net.load_state_dict(self.env.net.state_dict())
         self.target_net.eval()
 
         for ie in (tr := trange(num_episodes)):
             # Reset the environment and fetch a new initial state screenshot
-            self.env.env.reset()
+            self.env.reset()
             frame = self.env.render()
-            current_screen = get_torch_screen(frame, self.device, self.image_size, self.env.resize)
-            last_screen = get_torch_screen(frame, self.device, self.image_size, self.env.resize)
+            current_screen = get_torch_screen(frame, self.device, self.image_size)
+            last_screen = get_torch_screen(frame, self.device, self.image_size)
             state = current_screen - last_screen
 
             for t in count():
                 # Act
-                action = self.env.select_action(state, self.steps_done)
-                _, reward, done, _, _ = self.env.env.step(action.item())
+                action = self.select_action(state, self.steps_done)
+                _, reward, done, _, _ = self.env.step(action.item())
                 reward = torch.tensor([reward], device=self.device)
 
                 # Observe new state
                 last_screen = current_screen
-                current_screen = get_torch_screen(self.env.render(), self.device, self.image_size, self.env.resize)
+                current_screen = get_torch_screen(self.env.render(), self.device, self.image_size)
                 if not done:
                     next_state = current_screen - last_screen
                 else:
@@ -62,11 +82,11 @@ class CartPoleDQNTrainer:
 
                 optimize_model(
                     self.memory, 
-                    batch_size, 
+                    self.batch_size, 
                     self.optimizer,
                     self.env.net, 
                     self.target_net, 
-                    gamma,
+                    self.gamma,
                     self.device
                 )
 
@@ -78,7 +98,6 @@ class CartPoleDQNTrainer:
                         means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
                         means = torch.cat((torch.zeros(99), means))
                         tr.set_description("mean duration %.2f" % torch.mean(means))
-
                     if plot:
                         self.plotter.set("durations", self.episode_durations)
                         self.plotter.set("rewards", self.episode_rewards)
@@ -87,7 +106,7 @@ class CartPoleDQNTrainer:
                     break
 
                 # Update the target net with the state from the policy net
-                if ie % target_update == 0:
+                if ie % self.target_update == 0:
                     self.target_net.load_state_dict(self.env.net.state_dict())
 
         torch.save(self.env.net.state_dict(), f'CartPoleDQN_{num_episodes}ep.pt')
