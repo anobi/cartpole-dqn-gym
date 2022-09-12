@@ -1,71 +1,127 @@
+import sys
+import gym
+import math
+import random
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-from memory import Transition
+import torchvision.transforms as T
+from cartpole_dqn.dqn import DQN
+from cartpole_dqn.trainer import CartPoleDQNTrainer
+from cartpole_dqn.runner import CartPoleRunner
+from cartpole_dqn.utils.screen import get_torch_screen, get_human_screen
 
-
-class DQN(nn.Module):
-    def __init__(self, h, w, outputs):
-        super(DQN, self).__init__()
-
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=4, stride=4)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
-
-        def conv2d_size_out(size, kernel_size, stride, padding=0):
-            return ((size - kernel_size + (2 * padding)) // stride) + 1
-
-        conv_w = conv2d_size_out(w, kernel_size=3, stride=1)
-        conv_h = conv2d_size_out(h, kernel_size=3, stride=1)
-        linear_input_size = conv_w * conv_h * 64
-
-        self.hidden1 = nn.Linear(7 * 7 * 64, 128)
-
-        self.head = nn.Linear(128, outputs)
-
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.hidden1(x.view(x.size(0), -1)))
-        return self.head(x)
+SEED = 3907
+BATCH_SIZE = 128
+GAMMA = 0.99
+EPS_START = 0.9
+EPS_END = 0.01
+EPS_DECAY = 200
+TARGET_UPDATE = 10
+IMAGE_SIZE = 84
 
 
-def optimize_model(memory, batch_size, optimizer, policy_net, target_net, gamma, device):
-    if len(memory) < batch_size:
-        return
+class CartPoleDQN:
+    def __init__(self):
+        self.device = self._get_device()
+        self.rng = self._get_rng_generator()
+        self.env =  gym.make('CartPole-v1', render_mode="rgb_array").unwrapped
+        self.action_space = self.env.action_space.n
+        self.image_size = IMAGE_SIZE
+        self.screen_width = 0
+        self.screen_height = 0
+        self.resize = T.Compose([T.ToPILImage(), T.Resize(IMAGE_SIZE, interpolation=T.InterpolationMode.BICUBIC), T.ToTensor()])
 
-    transitions = memory.sample(batch_size)
-    batch = Transition(*zip(*transitions))
+        self.rng.manual_seed(SEED)
+        self.net = self.init_net()
 
-    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)),
-                                  device=device, dtype=torch.bool)
-    non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
+    def _get_device(self):
+        device_family = 'cpu'
+        if torch.cuda.is_available() and torch.backends.cuda.is_built():
+            device_family = 'cuda'
+        elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            device_family = 'mps'
+        
+        return torch.device(device_family)
 
-    state_batch = torch.cat(batch.state)
-    action_batch = torch.cat(batch.action)
-    reward_batch = torch.cat(batch.reward)
+    def _get_rng_generator(self):
+        device_family = 'cpu'
+        if torch.cuda.is_available() and torch.backends.cuda.is_built():
+            device_family = 'cuda'
 
-    # Compute Q(s_t, a)
-    state_action_values = policy_net(state_batch).gather(1, action_batch)
+        return torch.Generator(device=device_family)
+    
+    def init_net(self):
+        self.env.reset(seed=SEED)
+        self.screen_height, self.screen_width, _ = self.render().shape
+        return DQN(self.device, self.image_size, self.image_size, self.action_space).to(self.device)
 
-    # Compute V(s_{t+1}) for all next states
-    next_state_values = torch.zeros(batch_size, device=device)
-    next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
+    def load_net(self, path):
+        self.net.load_state_dict(torch.load(path))
+        self.net.eval()
 
-    # Compute expected Q values
-    expected_state_action_values = (next_state_values * gamma) + reward_batch
+    def select_action(self, state, steps_done):
+        sample = torch.rand(1, generator=self.rng, device=self.device).item()
+        eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * steps_done / EPS_DECAY)
+        steps_done += 1
 
-    # Compute Huber loss
-    # loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
+        if sample > eps_threshold:
+            with torch.no_grad():
+                return self.net(state.to(self.device)).max(1)[1].view(1, 1)
+        else:
+            return torch.tensor([[random.randrange(self.action_space)]], device=self.device, dtype=torch.long)
 
-    # Compute MSE loss
-    loss = F.mse_loss(state_action_values, expected_state_action_values.unsqueeze(1))
+    def render(self):
+        return self.env.render()
 
-    # Optimize the model
-    optimizer.zero_grad()
-    loss.backward()
-    for param in policy_net.parameters():
-        param.grad.data.clamp_(-1, 1)
-    optimizer.step()
+    def close(self):
+        self.env.close()
+
+
+def print_usage():
+    print("Usage: python cartpole_v1.py [train | run] [episodes (train) | {pretrained model file} (run)]")
+
+
+def main(argv):
+    if len(argv) < 2:
+        print_usage()
+        exit()
+
+    mode = argv[0]
+    if mode not in ['train', 'run']:
+        print_usage()
+
+    env = CartPoleDQN()
+
+    if mode == 'train':
+        episodes = int(argv[1])
+        print(f"Training on {env.device}")
+        trainer = CartPoleDQNTrainer(
+            env,
+            env.device,
+            batch_size=BATCH_SIZE, 
+            gamma=GAMMA, 
+            eps_start=EPS_START,
+            eps_end=EPS_END, 
+            eps_decay=EPS_DECAY, 
+            target_update=TARGET_UPDATE,
+            w=env.image_size,
+            h=env.image_size,
+            action_space=env.action_space
+        )
+        trainer.set_state_file(f'CartPoleDQN_{episodes}ep.pt')
+        trainer.run(episodes)
+
+    elif mode == 'run':
+        model_file = argv[1]
+        env.load_net(model_file)
+
+        print(f"Running on {env.device}")
+        runner = CartPoleRunner(env)
+        runner.run()
+
+    env.render()
+    env.close()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

@@ -8,7 +8,7 @@
             "name": "CartPoleDQN: Run",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/cartpole_v1.py",
+            "program": "${workspaceFolder}/cartpole_dqn.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["run", "CartPoleDQN_1000ep.pt"]
@@ -17,7 +17,7 @@
             "name": "CartPoleDQN: Train",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/cartpole_v1.py",
+            "program": "${workspaceFolder}/cartpole_dqn.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["train", "1000"]
