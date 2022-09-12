@@ -1,6 +1,7 @@
 env/
 list/
 __pycache__/
+.env/
 .idea/
 .ipynb_checkpoints/
 
