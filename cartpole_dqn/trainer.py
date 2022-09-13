@@ -33,15 +33,15 @@ class CartPoleDQNTrainer:
         self.steps_done = 0
         self.total_reward = 0
 
-        self.plotter = Plotter("Training", 3)
+        self.plotter = Plotter("Training", 2)
 
     def set_state_file(self, path):
         pass
 
-    def select_action(self, state, steps_done):
+    def select_action(self, state):
         sample = torch.rand(1, generator=self.env.rng, device=self.device).item()
-        eps_threshold = self.eps_end + (self.eps_start - self.eps_end) * math.exp(-1. * steps_done / self.eps_decay)
-        steps_done += 1
+        eps_threshold = self.eps_end + (self.eps_start - self.eps_end) * math.exp(-1. * self.steps_done / self.eps_decay)
+        self.steps_done += 1
         if sample > eps_threshold:
             with torch.no_grad():
                 return self.env.net(state.to(self.device)).max(1)[1].view(1, 1)
@@ -66,7 +66,7 @@ class CartPoleDQNTrainer:
             episode_losses = []
             for step in count():
                 # Act
-                action = self.select_action(state, self.steps_done)
+                action = self.select_action(state)
                 _, reward, done, _, _ = self.env.step(action.item())
                 reward = torch.tensor([reward], device=self.device)
                 episode_reward += reward.item()

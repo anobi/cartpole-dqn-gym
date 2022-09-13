@@ -61,7 +61,8 @@ def optimize_model(memory, batch_size, optimizer, policy_net, target_net, gamma,
     expected_state_action_values = (next_state_values * gamma) + reward_batch
 
     # Compute Huber loss
-    loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
+    criterion = nn.SmoothL1Loss()
+    loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
 
     # Optimize the model
     optimizer.zero_grad()
