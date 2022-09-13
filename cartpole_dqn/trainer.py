@@ -2,6 +2,7 @@ import math
 import random
 import torch
 import torch.optim as optim
+import numpy as np
 
 from tqdm import trange
 from itertools import count
@@ -13,14 +14,13 @@ from cartpole_dqn.utils.memory import Memory
 
 
 class CartPoleDQNTrainer:
-    def __init__(self, env, device, batch_size=128, gamma=0.999, eps_start=0.9,
-                 eps_end=0.05, eps_decay=200, target_update=10, w=84, h=84, action_space=2):
+    def __init__(self, env, device, batch_size, gamma, eps_start, eps_end, eps_decay, target_update, w, h, action_space, memory):
         self.env = env
         self.device = device
         self.image_size = w
         self.target_net = DQN(device, w, h, action_space).to(device)
         self.optimizer = optim.RMSprop(self.env.net.parameters())
-        self.memory = Memory(100000)
+        self.memory = Memory(memory)
 
         self.action_space=action_space
         self.batch_size=batch_size
@@ -32,8 +32,6 @@ class CartPoleDQNTrainer:
 
         self.steps_done = 0
         self.total_reward = 0
-        self.episode_durations = []
-        self.episode_rewards = []
 
         self.plotter = Plotter("Training", 3)
 
@@ -53,8 +51,10 @@ class CartPoleDQNTrainer:
     def run(self, num_episodes=50, plot=False):
         self.target_net.load_state_dict(self.env.net.state_dict())
         self.target_net.eval()
+        losses = []
+        rewards = []
 
-        for ie in (tr := trange(num_episodes)):
+        for episode in (tr := trange(num_episodes)):
             # Reset the environment and fetch a new initial state screenshot
             self.env.reset()
             frame = self.env.render()
@@ -62,12 +62,15 @@ class CartPoleDQNTrainer:
             last_screen = get_torch_screen(frame, self.device, self.image_size)
             state = current_screen - last_screen
 
-            for t in count():
+            episode_reward = 0
+            episode_losses = []
+            for step in count():
                 # Act
                 action = self.select_action(state, self.steps_done)
                 _, reward, done, _, _ = self.env.step(action.item())
                 reward = torch.tensor([reward], device=self.device)
-
+                episode_reward += reward.item()
+                
                 # Observe new state
                 last_screen = current_screen
                 current_screen = get_torch_screen(self.env.render(), self.device, self.image_size)
@@ -80,7 +83,7 @@ class CartPoleDQNTrainer:
                 self.memory.push(state, action, next_state, reward)
                 state = next_state
 
-                optimize_model(
+                loss = optimize_model(
                     self.memory, 
                     self.batch_size, 
                     self.optimizer,
@@ -89,24 +92,22 @@ class CartPoleDQNTrainer:
                     self.gamma,
                     self.device
                 )
-
-                if done:
-                    self.episode_durations.append(t + 1)
-                    self.episode_rewards.append(reward)
-                    durations_t = torch.tensor(self.episode_durations, dtype=torch.float)
-                    if len(durations_t) >= 100:
-                        means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-                        means = torch.cat((torch.zeros(99), means))
-                        tr.set_description("mean duration %.2f" % torch.mean(means))
-                    if plot:
-                        self.plotter.set("durations", self.episode_durations)
-                        self.plotter.set("rewards", self.episode_rewards)
-                        self.plotter.set("means", means)
-                        self.plotter.draw()
-                    break
+                episode_losses.append(loss or 0.0)
 
                 # Update the target net with the state from the policy net
-                if ie % self.target_update == 0:
+                if episode % self.target_update == 0:
                     self.target_net.load_state_dict(self.env.net.state_dict())
+
+                if done:
+                    break
+
+            losses.append(np.average(episode_losses))
+            avg_loss = np.average(losses)
+            rewards.append(episode_reward)
+            avg_reward = np.average(rewards)
+            tr.set_description(f"loss: {avg_loss:.2f} | reward: {avg_reward:.2f}")
+            if plot:
+                self.plotter.push(episode, reward=avg_reward, loss=avg_loss)
+                self.plotter.draw()
 
         torch.save(self.env.net.state_dict(), f'CartPoleDQN_{num_episodes}ep.pt')

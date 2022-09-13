@@ -69,3 +69,5 @@ def optimize_model(memory, batch_size, optimizer, policy_net, target_net, gamma,
     for param in policy_net.parameters():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
+
+    return loss.item()

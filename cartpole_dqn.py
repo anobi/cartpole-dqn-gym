@@ -9,12 +9,13 @@ from cartpole_dqn.utils.device import DeviceUse, get_device_family
 
 SEED = 3907
 BATCH_SIZE = 128
-GAMMA = 0.99
+GAMMA = 0.999
 EPS_START = 0.9
 EPS_END = 0.01
-EPS_DECAY = 200
+EPS_DECAY = 500
 TARGET_UPDATE = 10
-IMAGE_SIZE = 84
+MEMORY_SIZE = 10000
+IMAGE_SIZE = 80
 
 
 class CartPoleDQN:
@@ -81,10 +82,11 @@ def main(argv):
             target_update=TARGET_UPDATE,
             w=agent.image_size,
             h=agent.image_size,
-            action_space=agent.action_space
+            action_space=agent.action_space,
+            memory=MEMORY_SIZE
         )
         trainer.set_state_file(f'CartPoleDQN_{episodes}ep.pt')
-        trainer.run(episodes)
+        trainer.run(episodes, plot=True)
 
     elif mode == 'run':
         model_file = argv[1]
