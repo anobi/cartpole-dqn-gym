@@ -7,47 +7,44 @@ from gym.utils.play import display_arr
 
 from cartpole_dqn.utils.screen import get_torch_screen
 
-
 class CartPoleRunner:
-    def __init__(self, env):
-        self.env = env
+    def __init__(self, agent):
+        self.agent = agent
         self.steps_done = 0
         self.episode_durations = []
 
         pygame.init()
         pygame.display.set_caption("CartPoleDQN Runner")
-        self.display = pygame.display.set_mode((env.screen_width, env.screen_height))
+        self.display = pygame.display.set_mode((agent.screen_width, agent.screen_height))
 
     def draw(self, frame):
-        display_arr(self.display, frame, [self.env.screen_width, self.env.screen_height], True)
+        display_arr(self.display, frame, [self.agent.screen_width, self.agent.screen_height], True)
         pygame.display.flip()
 
     def select_action(self, state):
         with torch.no_grad():
-            return self.env.net(state.to(self.env.device)).max(1)[1].view(1, 1)
+            return self.agent.policy_net(state.to(self.agent.device)).max(1)[1].view(1, 1)
 
     def run(self, num_episodes=50):
         for _ in (tr := trange(num_episodes)):
-            self.env.reset()
-            frame = self.env.render()
-            current_screen = get_torch_screen(frame, self.env.device, self.env.image_size)
-            last_screen = current_screen
+            self.agent.reset()
+            frame = self.agent.render()
+            current_screen = get_torch_screen(frame, self.agent.device, self.agent.image_size)
             state = current_screen
             self.draw(frame)
 
             for t in count():
                 action = self.select_action(state)
-                _, _, done, _, _ = self.env.step(action.item())
+                _, _, done, _, _ = self.agent.step(action.item())
 
-                last_screen = current_screen
-                current_frame = self.env.render()
-                current_screen = get_torch_screen(current_frame, self.env.device, self.env.image_size)
+                current_frame = self.agent.render()
+                current_screen = get_torch_screen(current_frame, self.agent.device, self.agent.image_size)
                 self.draw(current_frame)
                 
                 if done:
                     next_state = None
                 else:
-                    next_state = current_screen - last_screen
+                    next_state = current_screen # - last_screen
                 state = next_state
 
                 if done:

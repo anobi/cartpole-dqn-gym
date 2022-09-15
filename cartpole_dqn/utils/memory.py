@@ -10,6 +10,10 @@ Transition = namedtuple(
     ]
 )
 
+#class Transition():
+    #def __init__():
+        #pass
+
 class Memory():
     def __init__(self, capacity):
         self.capacity = capacity

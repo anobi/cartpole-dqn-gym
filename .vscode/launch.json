@@ -11,7 +11,7 @@
             "program": "${workspaceFolder}/cartpole_dqn.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["run", "CartPoleDQN_1000ep.pt"]
+            "args": ["run", "100", "CartPoleDQN.pt"]
         },
         {
             "name": "CartPoleDQN: Train",
@@ -20,7 +20,7 @@
             "program": "${workspaceFolder}/cartpole_dqn.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["train", "1000"]
+            "args": ["train", "1000", "CartPoleDQN.pt"]
         }
     ]
 }

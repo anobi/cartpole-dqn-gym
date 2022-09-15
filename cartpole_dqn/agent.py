@@ -1,43 +1,72 @@
-import gym
+from email.generator import Generator
 import torch
-
+from gym import Env
+from typing import NamedTuple
 from cartpole_dqn.dqn import DQN
-from cartpole_dqn.utils.device import DeviceUse, get_device_family
+from cartpole_dqn.trainer import CartPoleDQNTrainer
+from cartpole_dqn.runner import CartPoleRunner
 
 
-RNG_SEED = 3907
+class Hyperparameters(NamedTuple):
+    BATCH_SIZE: int
+    TARGET_UPDATE: int
+    MEMORY_SIZE: int
+    GAMMA: float
+    EPSILON_START: float
+    EPSILON_END: float
+    EPSILON_DECAY: float
 
 
 class CartPoleDQNAgent:
-    def __init__(self, image_size):
-        self.device = torch.device(device=get_device_family(DeviceUse.DEVICE))
-        self.rng = torch.Generator(device=get_device_family(DeviceUse.RNG))
-        self.gym_env =  gym.make('CartPole-v1', render_mode="rgb_array").unwrapped
-        self.action_space = self.gym_env.action_space.n
+    def __init__(self, env: Env, device: torch.device, image_size: int, rng: Generator):
+        self.environment = env
+        self.action_space = env.action_space.n
+        self.device = device
+        self.rng = rng
         self.image_size = image_size
         self.screen_width = 0
         self.screen_height = 0
-
-        self.rng.manual_seed(RNG_SEED)
-        self.net = self.init_net()
+        self.policy_net = self.init_net()
     
     def init_net(self):
-        self.gym_env.reset(seed=RNG_SEED)
         self.screen_height, self.screen_width, _ = self.render().shape
         return DQN(self.device, self.image_size, self.image_size, self.action_space).to(self.device)
 
     def load_net(self, path):
-        self.net.load_state_dict(torch.load(path))
-        self.net.eval()
+        self.policy_net.load_state_dict(torch.load(path))
+        self.policy_net.eval()
 
     def render(self):
-        return self.gym_env.render()
+        return self.environment.render()
 
     def reset(self):
-        return self.gym_env.reset()
+        return self.environment.reset()
 
     def step(self, *args):
-        return self.gym_env.step(*args)
+        return self.environment.step(*args)
 
     def close(self):
-        self.gym_env.close()
+        self.environment.close()
+
+    def run(self, episodes):
+        runner = CartPoleRunner(self)
+        runner.run(episodes)
+
+    def train(self, episodes: int, state_file: str, params: Hyperparameters):
+        trainer = CartPoleDQNTrainer(
+            self,
+            self.device,
+            batch_size=params.BATCH_SIZE,
+            gamma=params.GAMMA,
+            eps_start=params.EPSILON_START,
+            eps_end=params.EPSILON_END,
+            eps_decay=params.EPSILON_DECAY,
+            target_update=params.TARGET_UPDATE,
+            w=self.image_size,
+            h=self.image_size,
+            action_space=self.action_space,
+            memory=params.MEMORY_SIZE,
+            state_file=state_file
+        )
+        trainer.set_state_file(state_file)
+        trainer.run(episodes, plot=False)

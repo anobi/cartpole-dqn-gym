@@ -1,26 +1,30 @@
 import sys
+import gym
+import torch
 
-from cartpole_dqn.agent import CartPoleDQNAgent
-from cartpole_dqn.trainer import CartPoleDQNTrainer
-from cartpole_dqn.runner import CartPoleRunner
+from cartpole_dqn.utils.device import DeviceUse, get_device_family
+from cartpole_dqn.agent import CartPoleDQNAgent, Hyperparameters
 
 
-BATCH_SIZE = 128
-GAMMA = 0.999
-EPS_START = 0.9
-EPS_END = 0.05
-EPS_DECAY = 200
-TARGET_UPDATE = 10
-MEMORY_SIZE = 10000
+RNG_SEED = 3907
 IMAGE_SIZE = 80
+PARAMS = Hyperparameters(
+    BATCH_SIZE = 128,
+    GAMMA = 0.999,
+    EPSILON_START = 0.9,
+    EPSILON_END = 0.01,
+    EPSILON_DECAY = 500,
+    TARGET_UPDATE = 10,
+    MEMORY_SIZE = 10000
+)
 
 
 def print_usage():
-    print("Usage: python cartpole_v1.py [train | run] [episodes (train) | {pretrained model file} (run)]")
+    print("Usage: python cartpole_v1.py [train | run] [episodes] [model file]]")
 
 
 def main(argv):
-    if len(argv) < 2:
+    if len(argv) < 3:
         print_usage()
         exit()
 
@@ -28,37 +32,25 @@ def main(argv):
     if mode not in ['train', 'run']:
         print_usage()
 
-    # TODO Separate agent and environment?
-    # Also, move device and rng generator out of agent
-    agent = CartPoleDQNAgent(IMAGE_SIZE)
+    episodes = int(argv[1])
+    model_file = argv[2]
+
+    device = torch.device(device=get_device_family(DeviceUse.DEVICE))
+    rng = torch.Generator(device=get_device_family(DeviceUse.RNG))
+    rng.manual_seed(RNG_SEED)
+
+    environment =  gym.make('CartPole-v1', render_mode="rgb_array").unwrapped
+    environment.reset(seed=RNG_SEED)
+
+    agent = CartPoleDQNAgent(environment, device, IMAGE_SIZE, rng)
 
     if mode == 'train':
-        episodes = int(argv[1])
         print(f"Training on {agent.device}")
-        trainer = CartPoleDQNTrainer(
-            agent,
-            agent.device,
-            batch_size=BATCH_SIZE,
-            gamma=GAMMA,
-            eps_start=EPS_START,
-            eps_end=EPS_END,
-            eps_decay=EPS_DECAY,
-            target_update=TARGET_UPDATE,
-            w=IMAGE_SIZE,
-            h=IMAGE_SIZE,
-            action_space=agent.action_space,
-            memory=MEMORY_SIZE
-        )
-        trainer.set_state_file(f'CartPoleDQN_{episodes}ep.pt')
-        trainer.run(episodes, plot=True)
-
+        agent.train(episodes, model_file, PARAMS)
     elif mode == 'run':
-        model_file = argv[1]
-        agent.load_net(model_file)
-
         print(f"Running on {agent.device}")
-        runner = CartPoleRunner(agent)
-        runner.run()
+        agent.load_net(model_file)
+        agent.run(episodes)
 
     agent.render()
     agent.close()
